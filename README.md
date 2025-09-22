@@ -1,4 +1,8 @@
+![モデルの配置場所](./img/img4.PNG)
+
 # ComfyUI-WanViTPoseRetargeter
+
+
 
 Wan2.2-Animationで実装されていたPoseRetargetのComfyUI移植です
 WanVideoWrapperを併用してお使いください
@@ -8,7 +12,7 @@ WanVideoWrapperを併用してお使いください
 以下のようにcustom_nodesにComfyUI-WANViTPoseRetargeterを配置してください。
 ```bash
 cd /path/to/ComfyUI/custom_nodes
-git clone https://github.com/yourname/ComfyUI-WANViTPoseRetargeter.git
+git clone https://github.com/red-polo/ComfyUI-WanViTPoseRetargeter.git
 # optionally install dependencies
 # python -m pip install -r ComfyUI-Node-Template/requirements.txt
 ```
@@ -18,8 +22,16 @@ modelsフォルダの中に以下のようにモデルを配置してくださ�
 ![モデルの配置場所](./img/img1.PNG)
 
 モデルは以下のリンク先のものをダウンロードして配置してください。
+
 [yolo10m.onnx](https://huggingface.co/Wan-AI/Wan2.2-Animate-14B/tree/main/process_checkpoint/det)  
 [vitposeh_wholebody.onnx](https://huggingface.co/Wan-AI/Wan2.2-Animate-14B/tree/main/process_checkpoint/pose2d)
+
+vitpose_wholebody.onnxは以下のコマンドでDLできます。
+```bash
+hf download Wan-AI/Wan2.2-Animate-14B \
+  --include "process_checkpoint/pose2d/**" \
+  --local-dir ./Wan2.2-Animate-14B
+```
 
 ComfyUIを再起動し.以下のようにノードが入っていたら成功です。
 
@@ -30,5 +42,9 @@ WanViTPoseRetargeterのimagesに動画の画像出力を、ref_imageに参照画
 cond_imagesからリターゲットされたポーズイメージが出力されます。
 ![WanViTPoseRetargeter](./img/img3.PNG)
 
+## サンプルワークフロー
+Wan2.2-Animateのmoveモード相当を実行するサンプルワークフローです。
+
 [サンプルワークフロー](./sample_workflow/wan2.2-animate-move-workflow.json)
 
+![ノード](./img/img5.PNG)
