@@ -2,12 +2,10 @@
 
 # ComfyUI-WanViTPoseRetargeter
 
-
-
 Wan2.2-Animationで実装されていたPoseRetargetのComfyUI移植です
 WanVideoWrapperを併用してお使いください
 
-## Install (recommended)
+## Install
 
 以下のようにcustom_nodesにComfyUI-WANViTPoseRetargeterを配置してください。
 ```bash
@@ -48,3 +46,7 @@ Wan2.2-Animateのmoveモード相当を実行するサンプルワークフロ�
 [サンプルワークフロー](./sample_workflow/wan2.2-animate-move-workflow.json)
 
 ![ノード](./img/img5.PNG)
+
+## 関連リンク
+* [Wan2.2](https://github.com/Wan-Video/Wan2.2)
+* [ComfyUI-WanVideoWrapper](https://github.com/kijai/ComfyUI-WanVideoWrapper)
