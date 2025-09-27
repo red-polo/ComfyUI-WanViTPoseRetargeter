@@ -1,4 +1,6 @@
 # Copyright 2024-2025 The Alibaba Wan Team Authors. All rights reserved.
+# Modifications Copyright (c) 2025 RedPolo
+
 import os
 import cv2
 import numpy as np
@@ -9,6 +11,30 @@ from typing import NamedTuple, List
 import copy
 from .pose2d_utils import AAPoseMeta
 
+import logging
+import sys
+
+
+def setup_logging(debug: bool | None = None) -> None:
+    """DEBUG時は詳細フォーマット・DEBUGレベル、通常時はINFOレベルをstdoutへ。"""
+    if debug is None:
+        # 環境変数 DEBUG=1/true/yes/on ならデバッグ扱い
+        debug = os.getenv("DEBUG", "").lower() in ("1", "true", "yes", "on")
+
+    level = logging.DEBUG if debug else logging.INFO
+#    fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s" if debug else "%(message)s"
+    fmt = "%(asctime)s [%(levelname)s]: %(message)s" if debug else "%(message)s"
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter(fmt))
+
+    root = logging.getLogger()
+    root.handlers.clear()          # 既存ハンドラを掃除（多重出力防止）
+    root.addHandler(handler)
+    root.setLevel(level)
+
+DEBUG = False
+setup_logging(DEBUG) 
+log = logging.getLogger(__name__)
 
 # load skeleton name and bone lines
 keypoint_list = [
@@ -157,7 +183,9 @@ def deal_hand_keypoints(hand_res, r_ratio, l_ratio, hand_score_th = 0.5):
 
 
 def get_scaled_pose(canvas, src_canvas, keypoints, keypoints_hand, bone_ratio_list, delta_ground_x, delta_ground_y,
-                                       rescaled_src_ground_x, body_flag, id, scale_min, threshold = 0.4):
+                                       rescaled_src_ground_x, body_flag, id, scale_min, threshold = 0.4,
+                                         keep_src = False, adjust_scale_anker="neck"):
+    log.debug(f"dst_skeleton:{bone_ratio_list}") 
 
     H, W = canvas
     src_H, src_W = src_canvas
@@ -226,7 +254,50 @@ def get_scaled_pose(canvas, src_canvas, keypoints, keypoints_hand, bone_ratio_li
         # update keypoints
         rescale_keypoints[k2_index - 1] = [end_keypoint_x, end_keypoint_y, rescale_keypoints[k2_index - 1][2]]
 
-    if id == 0:
+    if keep_src:
+        if adjust_scale_anker == "around foot":
+
+            dst_ground_y = max(keypoints[10][1], keypoints[13][1])
+
+            # The midpoint between toe and ankle
+            # 首＋つま先が両方ある場合は「足首とつま先の中点」を採用し、y座標の大きい方（下にある方）を「地面」として使う。
+            if keypoints[18] != None and keypoints[19] != None:
+                right_foot_mid = (keypoints[10][1] +keypoints[19][1]) / 2
+                left_foot_mid = (keypoints[13][1] + keypoints[18][1]) / 2
+                dst_ground_y = max(left_foot_mid, right_foot_mid)
+            
+            
+
+            # src側についても、足首位置から地面の高さを求め、変化量yを計算
+            rescaled_src_ground_y = max(rescale_keypoints[10][1], rescale_keypoints[13][1])
+
+            t_delta_ground_y = rescaled_src_ground_y - dst_ground_y
+            log.debug(keypoints)
+            log.debug(dst_ground_y)
+            
+            log.debug(rescaled_src_ground_y)
+            log.debug(t_delta_ground_y)
+            #srcとdestの腰位置から変化量xを計算
+            dst_ground_x = (keypoints[8][0] + keypoints[11][0]) /2
+            rescaled_src_ground_x = (rescale_keypoints[8][0] + rescale_keypoints[11][0]) / 2
+            
+            t_delta_ground_x = rescaled_src_ground_x - dst_ground_x
+
+            t_delta_x, t_delta_y = t_delta_ground_x, t_delta_ground_y
+            # offset all keypoints
+            for idx in range(len(rescale_keypoints)):
+                if rescale_keypoints[idx] is None or len(rescale_keypoints[idx]) == 0 :
+                    continue
+                rescale_keypoints[idx][0] -= t_delta_x
+                rescale_keypoints[idx][1] -= t_delta_y
+
+
+                # 元の位置の足元
+                # リスケールの足元
+
+
+
+    if id == 0 and not keep_src:
         if body_flag == 'full_body' and rescale_keypoints[8] != None and rescale_keypoints[11] != None:
             delta_ground_x_offset_first_frame = (rescale_keypoints[8][0] + rescale_keypoints[11][0]) / 2 - rescaled_src_ground_x
             delta_ground_x += delta_ground_x_offset_first_frame
@@ -477,7 +548,11 @@ def rescale_shorten_skeleton(ratio_list, src_length_list, dst_length_list):
     return ratio_list, src_length_list, dst_length_list
 
 
-
+"""
+full_body : 足首と腰が見えている
+three_quarter_body : 腰は見えているが足首は無い
+half_body : 腰も足首も無い（上半身だけ）
+"""
 def check_full_body(keypoints, threshold = 0.4):
 
     body_flag = 'half_body'
@@ -517,7 +592,7 @@ def check_full_body_both(flag1, flag2):
     return body_flag_dict_reverse[flag_both_num]
 
 
-def write_to_poses(data_to_json, none_idx, dst_shape, bone_ratio_list, delta_ground_x, delta_ground_y, rescaled_src_ground_x, body_flag, scale_min):
+def write_to_poses(data_to_json, none_idx, dst_shape, bone_ratio_list, delta_ground_x, delta_ground_y, rescaled_src_ground_x, body_flag, scale_min, keep_src, adjust_scale_anker):
     outputs = []
     length = len(data_to_json)
     for id in tqdm(range(length)):
@@ -542,7 +617,8 @@ def write_to_poses(data_to_json, none_idx, dst_shape, bone_ratio_list, delta_gro
             data_to_json[id]['keypoints_right_hand'][hand_idx][1] = data_to_json[id]['keypoints_right_hand'][hand_idx][1] / src_height
 
         
-        frame_info = get_scaled_pose((height, width), (src_height, src_width), new_keypoints, keypoints_hand, bone_ratio_list, delta_ground_x, delta_ground_y, rescaled_src_ground_x, body_flag, id, scale_min)
+        frame_info = get_scaled_pose((height, width), (src_height, src_width), new_keypoints, keypoints_hand, bone_ratio_list, delta_ground_x, delta_ground_y, rescaled_src_ground_x, body_flag, id, scale_min,
+                                     keep_src=keep_src, adjust_scale_anker=adjust_scale_anker)
         outputs.append(frame_info)
 
     return outputs
@@ -568,7 +644,10 @@ def calculate_scale_ratio(skeleton, skeleton_edit, scale_ratio_flag):
 
 
 
-def retarget_pose(src_skeleton, dst_skeleton, all_src_skeleton, src_skeleton_edit, dst_skeleton_edit, threshold=0.4):
+def retarget_pose(src_skeleton, dst_skeleton, all_src_skeleton, src_skeleton_edit, dst_skeleton_edit, threshold=0.4,
+                   keep_src=False, adjust_scale=1.0, adjust_scale_anker = "neck", adjust_x=0.0, adjust_y=0.0):
+
+    log.debug(f"dst_skeleton:{dst_skeleton}") 
 
     if src_skeleton_edit is not None and dst_skeleton_edit is not None:
         use_edit_for_base = True
@@ -577,12 +656,14 @@ def retarget_pose(src_skeleton, dst_skeleton, all_src_skeleton, src_skeleton_edi
 
     src_skeleton_ori = copy.deepcopy(src_skeleton)
 
+
+    # ソースからデストへのスケールの計算
     dst_skeleton_ori_h, dst_skeleton_ori_w = dst_skeleton['height'], dst_skeleton['width']
     if src_skeleton['keypoints_body'][0] != None and src_skeleton['keypoints_body'][10] != None and src_skeleton['keypoints_body'][13] != None and \
         dst_skeleton['keypoints_body'][0] != None and dst_skeleton['keypoints_body'][10] != None and dst_skeleton['keypoints_body'][13] != None and \
             src_skeleton['keypoints_body'][0][2] > 0.5 and src_skeleton['keypoints_body'][10][2] > 0.5 and src_skeleton['keypoints_body'][13][2] > 0.5 and \
         dst_skeleton['keypoints_body'][0][2] > 0.5 and dst_skeleton['keypoints_body'][10][2] > 0.5 and dst_skeleton['keypoints_body'][13][2] > 0.5:
-
+        #srcとdestの鼻から両足首までの値がありスコアが0.5以上なら鼻から両足首までの平均を高さとする
         src_height = src_skeleton['height'] * abs(
             (src_skeleton['keypoints_body'][10][1] + src_skeleton['keypoints_body'][13][1]) / 2 -
             src_skeleton['keypoints_body'][0][1])
@@ -594,7 +675,7 @@ def retarget_pose(src_skeleton, dst_skeleton, all_src_skeleton, src_skeleton_edi
         dst_skeleton['keypoints_body'][0] != None and dst_skeleton['keypoints_body'][8] != None and dst_skeleton['keypoints_body'][11] != None and \
             src_skeleton['keypoints_body'][0][2] > 0.5 and src_skeleton['keypoints_body'][8][2] > 0.5 and src_skeleton['keypoints_body'][11][2] > 0.5 and \
         dst_skeleton['keypoints_body'][0][2] > 0.5 and dst_skeleton['keypoints_body'][8][2] > 0.5 and dst_skeleton['keypoints_body'][11][2] > 0.5:
-
+        #srcとdestの鼻からお尻までの値がありスコアが0.5以上なら鼻から両お尻までの平均を高さとする
         src_height = src_skeleton['height'] * abs(
             (src_skeleton['keypoints_body'][8][1] + src_skeleton['keypoints_body'][11][1]) / 2 -
             src_skeleton['keypoints_body'][0][1])
@@ -603,8 +684,16 @@ def retarget_pose(src_skeleton, dst_skeleton, all_src_skeleton, src_skeleton_edi
             dst_skeleton['keypoints_body'][0][1])
         scale_min = 1.0 * src_height / dst_height
     else:
+        # 上の２つに当てはまらない場合（srcとdestの足首とお尻の値が使えない場合）画像全体の面積（縦×横のルート）比でスケールを決める。
+        # todo 
         scale_min = np.sqrt(src_skeleton['height'] * src_skeleton['width']) / np.sqrt(dst_skeleton['height'] * dst_skeleton['width'])
+        if keep_src:
+            scale_min = 1.0
+
+    scale_min *= adjust_scale
     
+    log.debug(f"scale_min:{scale_min}") 
+
     if use_edit_for_base:
         scale_ratio_flag = False
         if src_skeleton_edit['keypoints_body'][0] != None and src_skeleton_edit['keypoints_body'][10] != None and src_skeleton_edit['keypoints_body'][13] != None and \
@@ -635,7 +724,11 @@ def retarget_pose(src_skeleton, dst_skeleton, all_src_skeleton, src_skeleton_edi
             scale_min_edit = np.sqrt(src_skeleton_edit['height'] * src_skeleton_edit['width']) / np.sqrt(dst_skeleton_edit['height'] * dst_skeleton_edit['width'])
             scale_ratio_flag = True
         
+        if keep_src:
+            scale_min_edit = 1.0
+        
         # Flux may change the scale, compensate for it here
+        # 頭幅 or 肩幅の比率を計算して、キャリブレーション前後のスケールを揃える
         ratio_src = calculate_scale_ratio(src_skeleton, src_skeleton_edit, scale_ratio_flag)
         ratio_dst = calculate_scale_ratio(dst_skeleton, dst_skeleton_edit, scale_ratio_flag)
 
@@ -649,21 +742,30 @@ def retarget_pose(src_skeleton, dst_skeleton, all_src_skeleton, src_skeleton_edi
             dst_skeleton_edit['keypoints_right_hand'][idx][1] *= scale_min_edit
     
 
-    dst_skeleton['height'] = int(dst_skeleton['height'] * scale_min)
-    dst_skeleton['width'] = int(dst_skeleton['width'] * scale_min)
-    for idx in range(len(dst_skeleton['keypoints_left_hand'])):
-        dst_skeleton['keypoints_left_hand'][idx][0] *= scale_min
-        dst_skeleton['keypoints_left_hand'][idx][1] *= scale_min
-    for idx in range(len(dst_skeleton['keypoints_right_hand'])):
-        dst_skeleton['keypoints_right_hand'][idx][0] *= scale_min
-        dst_skeleton['keypoints_right_hand'][idx][1] *= scale_min
+    # 画像の大きさと両手の大きさをリスケール
+    if not keep_src:
+        dst_skeleton['height'] = int(dst_skeleton['height'] * scale_min)
+        dst_skeleton['width'] = int(dst_skeleton['width'] * scale_min)
+        for idx in range(len(dst_skeleton['keypoints_left_hand'])):
+            dst_skeleton['keypoints_left_hand'][idx][0] *= scale_min
+            dst_skeleton['keypoints_left_hand'][idx][1] *= scale_min
+        for idx in range(len(dst_skeleton['keypoints_right_hand'])):
+            dst_skeleton['keypoints_right_hand'][idx][0] *= scale_min
+            dst_skeleton['keypoints_right_hand'][idx][1] *= scale_min
 
 
+#   'full_body','three_quarter_body','half_body'のどれか
     dst_body_flag = check_full_body(dst_skeleton['keypoints_body'], threshold)
     src_body_flag = check_full_body(src_skeleton_ori['keypoints_body'], threshold)
     body_flag = check_full_body_both(dst_body_flag, src_body_flag)
     #print('body_flag: ', body_flag)
 
+    log.debug(f"body_flag:{body_flag}") 
+    log.debug(f"dst_body_flag:{dst_body_flag}") 
+    log.debug(f"src_body_flag:{src_body_flag}") 
+
+
+    #欠損ポイントを修復
     if use_edit_for_base:
         src_skeleton_edit = fix_lack_keypoints_use_sym(src_skeleton_edit)
         dst_skeleton_edit = fix_lack_keypoints_use_sym(dst_skeleton_edit)
@@ -671,6 +773,7 @@ def retarget_pose(src_skeleton, dst_skeleton, all_src_skeleton, src_skeleton_edi
         src_skeleton = fix_lack_keypoints_use_sym(src_skeleton)
         dst_skeleton = fix_lack_keypoints_use_sym(dst_skeleton)
 
+    #srcとdestで欠損しているキーポイントを揃える
     none_idx = []
     for idx in range(len(dst_skeleton['keypoints_body'])):
         if dst_skeleton['keypoints_body'][idx] == None or src_skeleton['keypoints_body'][idx] == None:
@@ -678,6 +781,7 @@ def retarget_pose(src_skeleton, dst_skeleton, all_src_skeleton, src_skeleton_edi
             dst_skeleton['keypoints_body'][idx] = None
             none_idx.append(idx)
 
+    # 骨ごとの長さ比を計算
     # get bone ratio list
     ratio_list, src_length_list, dst_length_list = [], [], []
     for idx, limb in enumerate(limbSeq):
@@ -703,6 +807,9 @@ def retarget_pose(src_skeleton, dst_skeleton, all_src_skeleton, src_skeleton_edi
         src_length_list.append(src_length)
         dst_length_list.append(dst_length)
     
+    # 欠損した比率を補う
+    # ratio = -1 の場合は「その骨が計算できなかった」ことを意味する。（どちらかの関節が None だったなど）
+    # そういう場合は、代わりに「肩まわりの比率（ratio_list[0], ratio_list[1]）」の平均値で補う。
     for idx, ratio in enumerate(ratio_list):
         if ratio == -1:
             if ratio_list[0] != -1 and ratio_list[1] != -1:
@@ -711,33 +818,54 @@ def retarget_pose(src_skeleton, dst_skeleton, all_src_skeleton, src_skeleton_edi
     # Consider adding constraints when Flux fails to correct head pose, causing neck issues.
     # if ratio_list[12] > (ratio_list[0]+ratio_list[1])/2*1.25:
     #     ratio_list[12] = (ratio_list[0]+ratio_list[1])/2*1.25
+
+    # print(ratio_list)
+    # print(src_length_list)
+    # print(dst_length_list)
     
     ratio_list, src_length_list, dst_length_list = rescale_shorten_skeleton(ratio_list, src_length_list, dst_length_list)
+
+    if keep_src:
+        ratio_list = [ (r * scale_min if (r is not None and r != -1) else r) for r in ratio_list ]
+    else:
+        ratio_list = [ (r * adjust_scale if (r is not None and r != -1) else r) for r in ratio_list ]
 
     rescaled_src_skeleton_ori = rescale_skeleton(src_skeleton_ori['height'], src_skeleton_ori['width'],
                                                  src_skeleton_ori['keypoints_body'], ratio_list)
 
     # get global translation offset_x and offset_y
     if body_flag == 'full_body':
+        # フルボディの場合の「基準合わせ（位置補正）」処理 
+        # 地面（足元）を基準にして、src と dst のポーズを同じ高さ・横位置に揃える
+        # srcからdest
+
         #print('use foot mark.')
+        # 足首のy座標の大きい方（下にある方）を「地面」として使う。
         dst_ground_y = max(dst_skeleton['keypoints_body'][10][1], dst_skeleton['keypoints_body'][13][1]) * dst_skeleton[
             'height']
         # The midpoint between toe and ankle
+        # 首＋つま先が両方ある場合は「足首とつま先の中点」を採用し、y座標の大きい方（下にある方）を「地面」として使う。
         if dst_skeleton['keypoints_body'][18] != None and dst_skeleton['keypoints_body'][19] != None:
             right_foot_mid = (dst_skeleton['keypoints_body'][10][1] + dst_skeleton['keypoints_body'][19][1]) / 2
             left_foot_mid = (dst_skeleton['keypoints_body'][13][1] + dst_skeleton['keypoints_body'][18][1]) / 2
             dst_ground_y = max(left_foot_mid, right_foot_mid) * dst_skeleton['height']
 
+        # src側についても、足首位置から地面の高さを求め、変化量yを計算
         rescaled_src_ground_y = max(rescaled_src_skeleton_ori[10][1], rescaled_src_skeleton_ori[13][1])
+        
         delta_ground_y = rescaled_src_ground_y - dst_ground_y
-       
+        
+        #srcとdestの腰位置から変化量xを計算
         dst_ground_x = (dst_skeleton['keypoints_body'][8][0] + dst_skeleton['keypoints_body'][11][0]) * dst_skeleton[
             'width'] / 2
         rescaled_src_ground_x = (rescaled_src_skeleton_ori[8][0] + rescaled_src_skeleton_ori[11][0]) / 2
+        
         delta_ground_x = rescaled_src_ground_x - dst_ground_x
+
         delta_x, delta_y = delta_ground_x, delta_ground_y
 
     else:
+        # 首（Neck＝インデックス1）を基準にして src と dst を同じ位置に揃えるための 平行移動量 Δx, Δy を計算
         #print('use neck mark.')
         # use neck keypoint as mark
         src_neck_y = rescaled_src_skeleton_ori[1][1]
@@ -750,15 +878,28 @@ def retarget_pose(src_skeleton, dst_skeleton, all_src_skeleton, src_skeleton_edi
         delta_x, delta_y = delta_neck_x, delta_neck_y
         rescaled_src_ground_x = src_neck_x
 
+    if keep_src:
+        delta_x, delta_y = 0.0, 0.0
+        rescaled_src_ground_x = 0.0
+
+    delta_x += adjust_x
+    delta_y += adjust_y
 
     dst_shape = (dst_skeleton_ori_w, dst_skeleton_ori_h)
-    output = write_to_poses(all_src_skeleton, none_idx, dst_shape, ratio_list, delta_x, delta_y,
-                                rescaled_src_ground_x, body_flag, scale_min)
+    if keep_src:
+        output = write_to_poses(all_src_skeleton, none_idx, dst_shape, ratio_list, delta_x, delta_y,
+                                    rescaled_src_ground_x, body_flag, 1.0,keep_src, adjust_scale_anker)
+    else:
+        output = write_to_poses(all_src_skeleton, none_idx, dst_shape, ratio_list, delta_x, delta_y,
+                            rescaled_src_ground_x, body_flag, scale_min,keep_src, adjust_scale_anker)
+
     return output
 
 
-def get_retarget_pose(tpl_pose_meta0, refer_pose_meta, tpl_pose_metas, tql_edit_pose_meta0, refer_edit_pose_meta):
+def get_retarget_pose(tpl_pose_meta0, refer_pose_meta, tpl_pose_metas, tql_edit_pose_meta0, refer_edit_pose_meta,
+                       keep_src, adjust_scale, adjust_scale_anker, adjust_x, adjust_y):
 
+    # metadataを辞書に変換
     for key, value in tpl_pose_meta0.items():
         if type(value) is np.ndarray:
             if key in ['keypoints_left_hand', 'keypoints_right_hand']:
@@ -804,7 +945,8 @@ def get_retarget_pose(tpl_pose_meta0, refer_pose_meta, tpl_pose_metas, tql_edit_
                     value = value.tolist()
             refer_edit_pose_meta[key] = value
 
-    retarget_tpl_pose_metas = retarget_pose(tpl_pose_meta0, refer_pose_meta, tpl_pose_metas_new, tql_edit_pose_meta0, refer_edit_pose_meta)
+    retarget_tpl_pose_metas = retarget_pose(tpl_pose_meta0, refer_pose_meta, tpl_pose_metas_new, tql_edit_pose_meta0, refer_edit_pose_meta,
+                                             keep_src=keep_src, adjust_scale=adjust_scale,adjust_scale_anker=adjust_scale_anker, adjust_x=adjust_x, adjust_y=adjust_y)
 
     pose_metas = []
     for meta in retarget_tpl_pose_metas:

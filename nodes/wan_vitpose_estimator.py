@@ -27,7 +27,6 @@ class WanViTPoseEstimator:
 
 
     def run(self, image) :
-        print(image.shape)
         dw_pose_model = "pose2d/vitpose_h_wholebody.onnx"
         yolo_model = "det/yolov10m.onnx"
 
@@ -40,20 +39,13 @@ class WanViTPoseEstimator:
         pose2d = Pose2d(checkpoint=pose2d_checkpoint_path, detector_checkpoint=det_checkpoint_path)
         frames = image.cpu().numpy() * 255
         refer_img = frames[0].copy()   
-        print(refer_img.shape)
-        print(refer_img.dtype)
-        print(np.max(refer_img))
         tpl_pose_metas = pose2d(frames)
-        print(tpl_pose_metas)
         tpl_retarget_pose_metas = [AAPoseMeta.from_humanapi_meta(meta) for meta in tpl_pose_metas]
         cond_images = []
         
         for idx, meta in enumerate(tpl_retarget_pose_metas):
             canvas = np.zeros_like(refer_img)
-            print(canvas.shape)
-            print(canvas.dtype)
             conditioning_image = draw_aapose_by_meta_new(canvas, meta)
-            print(np.max(conditioning_image))
             cond_images.append(conditioning_image)
         cond_images = np.stack(cond_images, axis=0) / 255
 
@@ -79,6 +71,39 @@ class WanViTPoseRetargeter:
         return {"required": {
                 "images": ("IMAGE", {"tooltip": "Input image for pose detection"}),
                 "ref_image": ("IMAGE", {"tooltip": "Input reference image"}),
+                
+                "target_to_src": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "True: scale to src / False: scale to ref"
+                }),
+                "adjust_scale": ("FLOAT", {
+                    "default": 1.0,
+                    "min": 0.01,       # 最小値
+                    "max": 100.0,       # 最大値
+                    "step": 0.05,
+                    "tooltip": "大きさをスケールする"
+                }),
+                #hipもやりたい
+                "adjust_scale_anker": (["neck","around foot"],{"default": "neck","tooltip": "target_to_srcがTrueの時のみ有効"}),
+                
+                "adjust_x": ("FLOAT", {
+                    "default": 0.0,
+                    "min": -2000.0,       # 最小値
+                    "max": 2000.0,       # 最大値
+                    "step": 1.0,
+                    "tooltip": "x方向に移動させる"
+                }),
+                "adjust_y": ("FLOAT", {
+                    "default": 0.0,
+                    "min": -2000.0,       # 最小値
+                    "max": 2000.0,       # 最大値
+                    "step": 1.0,
+                    "tooltip": "y方向に移動させる"
+                }),
+            },
+            "optional": {
+                "calibration_image": ("IMAGE", {"tooltip": "Input caribration image"}),
+                #"calibration_ref_image": ("IMAGE", {"tooltip": "Input reference caribration image"})
             }
         }
 
@@ -88,9 +113,8 @@ class WanViTPoseRetargeter:
     CATEGORY = "WanViTPoseRetargeter"
 
 
-    def run(self, images,ref_image) :
-        print(images.shape)
-        
+    def run(self, images,ref_image,target_to_src , adjust_scale, adjust_scale_anker, adjust_x, adjust_y,calibration_image=None, calibration_ref_image=None) :
+        keep_src_scale = target_to_src
         # Model loading
         dw_pose_model = "pose2d/vitpose_h_wholebody.onnx"
         yolo_model = "det/yolov10m.onnx"
@@ -103,14 +127,19 @@ class WanViTPoseRetargeter:
 
         pose2d = Pose2d(checkpoint=pose2d_checkpoint_path, detector_checkpoint=det_checkpoint_path)
         frames = images.cpu().numpy() * 255
-        frame0 = frames[:1].copy()   
+        if calibration_image == None:
+            frame0 = frames[:1].copy()   
+        else:
+            frame0 = calibration_image.cpu().numpy() * 255
         ref_img = ref_image.cpu().numpy() * 255
         
         tpl_pose_metas = pose2d(frames)
         tpl_pose_meta0 = pose2d(frame0)[0]
         refer_pose_meta = pose2d(ref_img)[0]
 
-        tpl_retarget_pose_metas = get_retarget_pose(tpl_pose_meta0, refer_pose_meta, tpl_pose_metas, None, None)
+        tpl_retarget_pose_metas = get_retarget_pose(tpl_pose_meta0, refer_pose_meta, tpl_pose_metas, None, None,
+                                                     keep_src_scale, adjust_scale, adjust_scale_anker,adjust_x, adjust_y,)
+
         cond_images = []
         
         for idx, meta in enumerate(tpl_retarget_pose_metas):
