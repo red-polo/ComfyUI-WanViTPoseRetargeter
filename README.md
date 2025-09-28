@@ -1,20 +1,30 @@
-![モデルの配置場所](./img/img4.PNG)
+![モデルの配置場所](./img/img10.PNG)
+
+# 開発中のため、想定外の動作をすることがありますがご容赦ください
 
 # ComfyUI-WanViTPoseRetargeter
 
-
-
-Wan2.2-Animationで実装されていたPoseRetargetのComfyUI移植です
+Wan2.2-Animateで実装されていたポーズリターゲット処理ののComfyUI移植です  
 WanVideoWrapperを併用してお使いください
+ 
+Wan2.2-Animateでは、以下の２つの使い方が示されています。
+1. 参照画像を動画中の人物に反映する
+2. 動画の動きを参照画像に反映する
 
-## Install (recommended)
+2の使い方をするために動画ポーズを参照画像にリターゲットする処理がWan2.2 Animateで実装されていましたが、移植がありませんでしたのでそちらを移植しました。
 
+また、1の使い方をする際はキャラクターを動画のポーズにするのですが、おそらくクオリティ上の制限からリターゲット処理を行っておらず、アニメキャラクターとリアルの人といったようにプロポーションが大きく異なるキャラクター間では、参照画像のキャラクターのプロポーションが大きく崩れる等問題がありました。
+
+今回は、参照画像のプロポーションを動画の方にリターゲットすることで、リアルとアニメの融合を行えるようにすることを目指しました。
+
+また、細かい調整用の機能を付けました。
+
+
+## インストール
 以下のようにcustom_nodesにComfyUI-WANViTPoseRetargeterを配置してください。
 ```bash
 cd /path/to/ComfyUI/custom_nodes
 git clone https://github.com/red-polo/ComfyUI-WanViTPoseRetargeter.git
-# optionally install dependencies
-# python -m pip install -r ComfyUI-Node-Template/requirements.txt
 ```
 
 modelsフォルダの中に以下のようにモデルを配置してください。  
@@ -37,14 +47,50 @@ ComfyUIを再起動し.以下のようにノードが入っていたら成功で
 
 ![ノード](./img/img2.PNG)
 
-## 使い方
-WanViTPoseRetargeterのimagesに動画の画像出力を、ref_imageに参照画像を入力してください。  
-cond_imagesからリターゲットされたポーズイメージが出力されます。
-![WanViTPoseRetargeter](./img/img3.PNG)
+## ノード
+
+WanVitPoseRetargeter  
+![ノード](./img/img6.PNG)
+
+#### 入力
+* images  
+動画からの入力
+* ref_image
+参照画像  
+* caribration_image（オプション）  (target_to_srcがfalseの場合無効)
+参照画像中のキャラクターと動画中の人物のプロポーション変換のための基準に用いる画像
+入れない場合imagesの一番初めの画像が使われます。
+imagesの一番初めの画像が横を向いているなど基準計算に向かいない場合などに、基準に向いている画像を動画中から取り出して着たり、他の画像を使用することで正しい基準を計算できるようにします。
+* target_to_src  
+True: 動画中の人物を基準として、参照画像のキャラクターのモーションを移します。
+False: 参照画像のキャラクターを基準として、動画中の人物のモーションを移します。
+* adjust_scale  
+拡大率です。微調整に使ってください。
+* adjust_scale_anker  
+拡大の際に原点となる場所です。
+"neck": 首を原点として拡大します。
+"around foot": 足元を原点として拡大します
+* adjust_x  
+横方向にポーズを移動します。微調整に使ってください。
+* adjust_y  
+縦方向にポーズを移動します。微調整に使ってください。
+
+#### 出力
+* cond_images  
+Wan2.2 Animateで使用できるポーズイメージです。
+
 
 ## サンプルワークフロー
-Wan2.2-Animateのmoveモード相当を実行するサンプルワークフローです。
 
-[サンプルワークフロー](./sample_workflow/wan2.2-animate-move-workflow.json)
+1. 参照画像を動画中の人物に反映する
+[WanAnimatePoseRetarget_example_to_src.json](./sample_workflow/WanAnimatePoseRetarget_example_to_src.json)
+![ノード](./img/img7.PNG)
+
+2. 動画の動きを参照画像に反映する
+[WanAnimatePoseRetarget_example_to_dst.json](./sample_workflow/WanAnimatePoseRetarget_example_to_dst.json)
 
 ![ノード](./img/img5.PNG)
+
+## 関連リンク
+* [Wan2.2](https://github.com/Wan-Video/Wan2.2)
+* [ComfyUI-WanVideoWrapper](https://github.com/kijai/ComfyUI-WanVideoWrapper)
