@@ -31,7 +31,7 @@ git clone https://github.com/red-polo/ComfyUI-WanViTPoseRetargeter.git
 # python -m pip install -r requirements.txt
 ```
 
-modelsフォルダの中に以下のようにモデルを配置してください。  
+カスタムノード中のmodelsフォルダの中に以下のようにモデルを配置してください。  
 
 <img src="./img/img1.PNG" width="300px">
 
