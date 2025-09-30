@@ -645,8 +645,8 @@ def calculate_scale_ratio(skeleton, skeleton_edit, scale_ratio_flag):
 
 
 def retarget_pose(src_skeleton, dst_skeleton, all_src_skeleton, src_skeleton_edit, dst_skeleton_edit, threshold=0.4,
-                   keep_src=False, adjust_scale=1.0, adjust_scale_anker = "neck", adjust_x=0.0, adjust_y=0.0):
-
+                   keep_src=False, adjust_scale=1.0, adjust_scale_anker = "neck", adjust_x=0.0, adjust_y=0.0,calibration_skeleton=None):
+    #print(keep_src)
     log.debug(f"dst_skeleton:{dst_skeleton}") 
 
     if src_skeleton_edit is not None and dst_skeleton_edit is not None:
@@ -690,7 +690,8 @@ def retarget_pose(src_skeleton, dst_skeleton, all_src_skeleton, src_skeleton_edi
         if keep_src:
             scale_min = 1.0
 
-    scale_min *= adjust_scale
+    if keep_src:
+        scale_min *= adjust_scale
     
     log.debug(f"scale_min:{scale_min}") 
 
@@ -793,7 +794,6 @@ def retarget_pose(src_skeleton, dst_skeleton, all_src_skeleton, src_skeleton_edi
                 ratio = -1
             else:
                 ratio = 1.0 * dst_length * ratio_dst / src_length / ratio_src
-        
         else:
             src_X, src_Y, src_length = get_length(src_skeleton, limb)
             dst_X, dst_Y, dst_length = get_length(dst_skeleton, limb)
@@ -897,7 +897,7 @@ def retarget_pose(src_skeleton, dst_skeleton, all_src_skeleton, src_skeleton_edi
 
 
 def get_retarget_pose(tpl_pose_meta0, refer_pose_meta, tpl_pose_metas, tql_edit_pose_meta0, refer_edit_pose_meta,
-                       keep_src, adjust_scale, adjust_scale_anker, adjust_x, adjust_y):
+                       keep_src, adjust_scale, adjust_scale_anker, adjust_x, adjust_y, calibration_pose_meta=None):
 
     # metadataを辞書に変換
     for key, value in tpl_pose_meta0.items():
@@ -944,9 +944,19 @@ def get_retarget_pose(tpl_pose_meta0, refer_pose_meta, tpl_pose_metas, tql_edit_
                 if not isinstance(value, list):
                     value = value.tolist()
             refer_edit_pose_meta[key] = value
+    
+    if calibration_pose_meta is not None:
+        for key, value in calibration_pose_meta.items():
+            if type(value) is np.ndarray:
+                if key in ['keypoints_left_hand', 'keypoints_right_hand']:
+                    value = value * np.array([[calibration_pose_meta["width"], calibration_pose_meta["height"], 1.0]])
+                if not isinstance(value, list):
+                    value = value.tolist()
+            calibration_pose_meta[key] = value
 
     retarget_tpl_pose_metas = retarget_pose(tpl_pose_meta0, refer_pose_meta, tpl_pose_metas_new, tql_edit_pose_meta0, refer_edit_pose_meta,
-                                             keep_src=keep_src, adjust_scale=adjust_scale,adjust_scale_anker=adjust_scale_anker, adjust_x=adjust_x, adjust_y=adjust_y)
+                                             keep_src=keep_src, adjust_scale=adjust_scale,adjust_scale_anker=adjust_scale_anker, adjust_x=adjust_x, adjust_y=adjust_y,
+                                             calibration_skeleton=calibration_pose_meta)
 
     pose_metas = []
     for meta in retarget_tpl_pose_metas:

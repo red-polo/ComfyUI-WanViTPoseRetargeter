@@ -1,6 +1,8 @@
 ![モデルの配置場所](./img/img10.PNG)
 
-# 開発中のため、想定外の動作をすることがありますがご容赦ください
+# このノードは先行公開されているノードです
+* 開発中のため、想定外の動作をすることがあります。
+* 今後仕様変更することがあります
 
 # ComfyUI-WanViTPoseRetargeter
 
@@ -25,11 +27,13 @@ Wan2.2-Animateでは、以下の２つの使い方が示されています。
 ```bash
 cd /path/to/ComfyUI/custom_nodes
 git clone https://github.com/red-polo/ComfyUI-WanViTPoseRetargeter.git
+# optionally install dependencies
+# python -m pip install -r requirements.txt
 ```
 
 modelsフォルダの中に以下のようにモデルを配置してください。  
 
-![モデルの配置場所](./img/img1.PNG)
+<img src="./img/img1.PNG" width="300px">
 
 モデルは以下のリンク先のものをダウンロードして配置してください。
 
@@ -45,25 +49,36 @@ hf download Wan-AI/Wan2.2-Animate-14B \
 
 ComfyUIを再起動し.以下のようにノードが入っていたら成功です。
 
-![ノード](./img/img2.PNG)
+<img src="./img/img2.PNG" width="300px">
 
 ## ノード
 
-WanVitPoseRetargeter  
-![ノード](./img/img6.PNG)
+### **WanVitPoseRetargeter**
 
+
+<img src="./img/WanVitPoseRetargeter.PNG" width="300px">
+
+#### 概要
+動画中のモーションを参照画像に適用する機能を持ったノードです。
 #### 入力
 * images  
 動画からの入力
-* ref_image
+* ref_image  
 参照画像  
-* caribration_image（オプション）  (target_to_srcがfalseの場合無効)
-参照画像中のキャラクターと動画中の人物のプロポーション変換のための基準に用いる画像
-入れない場合imagesの一番初めの画像が使われます。
-imagesの一番初めの画像が横を向いているなど基準計算に向かいない場合などに、基準に向いている画像を動画中から取り出して着たり、他の画像を使用することで正しい基準を計算できるようにします。
-* target_to_src  
-True: 動画中の人物を基準として、参照画像のキャラクターのモーションを移します。
-False: 参照画像のキャラクターを基準として、動画中の人物のモーションを移します。
+#### 出力
+* cond_images  
+Wan2.2 Animateで使用できるポーズイメージです。
+
+### **WanVitPoseRetargeterToSrc**
+<img src="./img/WanVitPoseRetargeterToSrc.PNG" width="300px">
+
+#### 概要
+動画中のキャラクターを参照画像のキャラクターに置き換える機能を持ったノードです。
+#### 入力
+* images  
+動画からの入力
+* ref_image  
+参照画像  
 * adjust_scale  
 拡大率です。微調整に使ってください。
 * adjust_scale_anker  
@@ -74,7 +89,6 @@ False: 参照画像のキャラクターを基準として、動画中の人物�
 横方向にポーズを移動します。微調整に使ってください。
 * adjust_y  
 縦方向にポーズを移動します。微調整に使ってください。
-
 #### 出力
 * cond_images  
 Wan2.2 Animateで使用できるポーズイメージです。
@@ -84,10 +98,10 @@ Wan2.2 Animateで使用できるポーズイメージです。
 
 1. 参照画像を動画中の人物に反映する
 [WanAnimatePoseRetarget_example_to_src.json](./sample_workflow/WanAnimatePoseRetarget_example_to_src.json)
-![ノード](./img/img7.PNG)
+![ノード](./img/sampleworkflow.png)
 
 2. 動画の動きを参照画像に反映する
-[WanAnimatePoseRetarget_example_to_dst.json](./sample_workflow/WanAnimatePoseRetarget_example_to_dst.json)
+[wan2.2-animate-move-workflow.json](./sample_workflow/wan2.2-animate-move-workflow.json)
 
 ![ノード](./img/img5.PNG)
 
